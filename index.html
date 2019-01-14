@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+        <link rel="stylesheet" href="./css/bootstrap.min.css">
+        <link rel="stylesheet" href="./css/bootstrap-multiselect.css">
+        <title>My Project</title>
+        <style>
+            #chart g {
+                transition: 0.5s;
+            }
+            #chart svg > g > g:first-child:hover > g {
+                opacity: 0.4;
+            }
+            #chart svg > g > g:first-child > g:hover {
+                opacity: 1;
+            }
+        </style>
+    </head>
+    <body>
+        <section>
+            <div class="container">
+                <div class="row">
+                    <div class="col">
+                        <h2>The comparison of the sum of planned and actual cost for each agency</h2>
+                        <span>Filter: </span><select id="filter" multiple="multiple"></select>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <div id="chart"></div>
+        
+        <section>
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-8 col-md-offset-2">
+                        <p>This bar chart shows a comparison between the sum of planned cost and sum of actual cost divided by each agency. These costs of this chart will display in Million US Dollar.</p>
+                        <p>Comparison of the chart will benefit people who are looking into the cost of the project that belongs to an agency, such as investor and investigator. An investor can evaluate performance and cost management of these agencies to ensure that they are trustworthy before investing. As well as, an investigator can examine accurate of planning cost, and effectiveness and efficiency of cost management in each organisation.</p>
+                        <p>Filter function was applied to this chart, which user can select agency names in order to show only particular data they want. Due to a great of number of data, this function will provide users with an ability to modify the chart to reveal only essential data, which they are able to read and compare data much more easier.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <script src="./js/jquery-3.3.1.min.js"></script>
+        <script src="./js/popper.min.js"></script>
+        <script src="./js/bootstrap.min.js"></script>
+        <script src="./js/bootstrap-multiselect.js"></script>
+        <script src="./js/d3.min.js"></script>
+        
+        <script>
+            var group_data
+            
+            $(document).ready(function(){
+                $('#filter').on('change', function(){
+                    render();
+                });
+            });
+            
+            d3.queue()
+            .defer(d3.csv, "./COMP6214_CW1-cleaned.csv",
+            function(data, i) {
+                return {
+                    id: i,
+                    agency: data["Agency Name"],
+                    planned_cost: data["Planned Cost ($ M)"],
+                    actual_cost: data["Projected/Actual Cost ($ M)"]
+                }
+            }).await(analyze);
+
+            function analyze(error, dataset) {
+                if(error) { 
+                    console.log(error);
+                    return; 
+                }
+                group_data = d3.nest()
+                    .key(function(d) { return d.agency; })
+                    .rollup(function(v) { return {
+                        planned_cost: d3.sum(v, function(d) { return d.planned_cost; }),
+                        actual_cost: d3.sum(v, function(d) { return d.actual_cost; })
+                    }; }).entries(dataset);
+                
+                for(var i = 0, l = group_data.length; i < l; i++) {
+                    group_data[i]["Planned cost"] = group_data[i].value.planned_cost;
+                    group_data[i]["Actual cost"] = group_data[i].value.actual_cost;
+                    delete group_data[i]["value"];
+                    $('#filter').append('<option value="'+group_data[i].key+'">'+group_data[i].key+'</option>');
+                }
+                                        
+                $('#filter').multiselect({
+                    enableFiltering: true,
+                    includeSelectAllOption: true
+                });
+                
+                render();
+            }
+             
+            function render() {
+                d3.select("svg").remove();
+                
+                var choices = [];
+                $('ul.multiselect-container > li.active').each(function(){
+                    choices.push($(this).find('input').val());
+                });
+                
+                var data = [];
+                
+                if(choices.length > 0){
+                    for(var i = 0; i < choices.length; i++) {
+                        data = data.concat(group_data.filter(function(d){ return d.key == choices[i] ;}))
+                    }
+                } else {
+                    data = group_data;
+                }
+                
+                var margin = { top: 30, right: 80, bottom: 60, left: 250 };
+                var width = 800;
+                var height = data.length * 45;
+                var keys = Object.keys(data[0]).slice(1);
+                
+                var y0 = d3.scaleBand()
+                    .rangeRound([0, height])
+                    .paddingInner(0.1);
+
+                var y1 = d3.scaleBand()
+                    .padding(0.05);
+
+                var x = d3.scaleLinear()
+                    .rangeRound([width, 0]);
+
+                var z = d3.scaleOrdinal()
+                    .range(["#3DCCC7", "#EA526F"]);
+
+                y0.domain(data.map(function(d) { return d.key; }));
+                y1.domain(keys).rangeRound([0, y0.bandwidth()]);
+                x.domain([0, d3.max(data, function(d) { return d3.max(keys, function(key) { return d[key]; }); })]).nice().range([0, width]);
+
+                var svg = d3.select('#chart')
+                    .append('svg')
+                    .attr('width', width + margin.left + margin.right)
+                    .attr('height', height + margin.top + margin.bottom)
+                    .append('g')
+                    .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+                
+                var bars = svg.append("g")
+                    .selectAll("g")
+                    .data(data)
+                    .enter().append("g")
+                    .attr("transform", function(d) { return "translate(0," + y0(d.key) + ")"; })
+                    .selectAll("rect")
+                    .data(function(d) { return keys.map(function(key) { return {key: key, value: d[key]}; }); })
+                    .enter();
+                
+                 bars.append("text")
+                    .attr("class", "label")
+                    .attr("y", function(d) { return y1(d.key) + 13; })
+                    .attr("x", function(d) { return x(d.value) + 3; })
+                    .text(function(d) { return Math.round(d.value * 100) / 100; });
+                
+                bars.append("rect")
+                    .attr("x", 0 )
+                    .attr("y", function(d) { return y1(d.key); })
+                    .attr("height", y1.bandwidth())
+                    .attr("width", function(d) { return x(d.value); })
+                    .attr("fill", function(d) { return z(d.key); });
+                
+                // x Axis
+                svg.append("g")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(d3.axisBottom(x));
+                
+                svg.append("text")
+                    .attr("transform",
+                        "translate(" + (width/2) + " ," + (height + margin.top + 20) + ")")
+                    .style("text-anchor", "middle")
+                    .text("US Dollar (Million)");
+
+                // y Axis
+                svg.append("g")
+                    .call(d3.axisLeft(y0).tickSize(0)
+                        .tickFormat(function(d, i) {
+                            return data[i].key;
+                        })
+                    );
+                svg.append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 0 - margin.left)
+                    .attr("x",0 - (height / 2))
+                    .attr("dy", "1em")
+                    .style("text-anchor", "middle")
+                    .text("Agency Name");
+
+                // legend
+                var legend = svg.append("g")
+                    .attr("font-family", "sans-serif")
+                    .attr("font-size", 10)
+                    .attr("text-anchor", "end")
+                    .selectAll("g")
+                    .data(keys.slice())
+                    .enter().append("g")
+                    .attr("transform", function(d, i) { return "translate(60," + i * 20 + ")"; });
+
+                legend.append("rect")
+                    .attr("x", width - 19)
+                    .attr("width", 19)
+                    .attr("height", 19)
+                    .attr("fill", z);
+
+                legend.append("text")
+                    .attr("x", width - 24)
+                    .attr("y", 9.5)
+                    .attr("dy", "0.32em")
+                    .text(function(d) { return d; });
+
+            }
+
+        </script>
+    </body>
+</html>
